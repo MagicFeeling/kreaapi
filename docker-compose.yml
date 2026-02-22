@@ -1,0 +1,8 @@
+services:
+  kreaapi:
+    build: .
+    env_file: .env
+    volumes:
+      - ./output:/output
+      - ./training_images:/training_images:ro
+      - ./uploaded_urls.json:/app/uploaded_urls.json
