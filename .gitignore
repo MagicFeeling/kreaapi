@@ -1,5 +1,6 @@
 .env
 output/
 uploaded_urls.json
+training_images/
 __pycache__/
 *.pyc
