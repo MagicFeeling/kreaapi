@@ -26,7 +26,6 @@ def is_safe(urls: list[str]) -> bool:
     )
     if resp.status_code == 400 and "Unsafe" in resp.text:
         return False
-    # any other response (including 500) means the batch passed safety
     return True
 
 
@@ -54,7 +53,8 @@ def main():
 
     cache = json.loads(cache_path.read_text())
     names = sorted(cache.keys())
-    urls = [cache[n] for n in names]
+    # handle both old format {name: url} and new format {name: {"url": ..., "sha256": ...}}
+    urls = [cache[n]["url"] if isinstance(cache[n], dict) else cache[n] for n in names]
 
     print(f"Binary searching {len(urls)} images for unsafe content...\n")
     bad = find_unsafe(urls, names)

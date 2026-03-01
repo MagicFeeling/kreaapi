@@ -49,7 +49,7 @@ def main():
     prompt = os.getenv("PROMPT", "a beautiful portrait")
     strength = float(os.getenv("STYLE_STRENGTH", "0.8"))
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output = os.getenv("OUTPUT_PATH", f"/output/{style_id}_{timestamp}.png")
+    output = os.getenv("OUTPUT_PATH", f"/output/{style_id}_{timestamp}_s{strength:.2f}.png")
 
     aspect = os.getenv("ASPECT_RATIO", "1:1")
     w_ratio, h_ratio = map(int, aspect.split(":"))

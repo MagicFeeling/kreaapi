@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import json
 import os
 import sys
@@ -20,15 +21,21 @@ def auth():
     return {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
 
 
-def upload_image(file_path: str) -> str:
+def sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    h.update(path.read_bytes())
+    return h.hexdigest()
+
+
+def upload_image(file_path: Path) -> str:
     resp = requests.post(
         f"{BASE_URL}/assets",
         headers={"Authorization": f"Bearer {API_KEY}"},
-        files={"file": (Path(file_path).name, open(file_path, "rb"), "image/png")},
+        files={"file": (file_path.name, open(file_path, "rb"), "image/png")},
     )
     resp.raise_for_status()
     url = resp.json()["image_url"]
-    print(f"  uploaded {Path(file_path).name} → {url}")
+    print(f"  uploaded {file_path.name} → {url}")
     return url
 
 
@@ -49,6 +56,25 @@ def poll_job(job_id: str, interval: int = 15, timeout: int = 7200) -> dict:
         time.sleep(interval)
 
 
+def load_cache() -> dict:
+    path = Path(URLS_CACHE)
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text())
+    # migrate old format {name: url_string} → {name: {"url": ..., "sha256": ...}}
+    migrated = {}
+    for name, entry in raw.items():
+        if isinstance(entry, str):
+            migrated[name] = {"url": entry, "sha256": None}  # hash unknown → will re-upload
+        else:
+            migrated[name] = entry
+    return migrated
+
+
+def save_cache(cache: dict) -> None:
+    Path(URLS_CACHE).write_text(json.dumps(cache, indent=2))
+
+
 def main():
     if not API_KEY:
         sys.exit("KREA_API_KEY not set in .env")
@@ -62,26 +88,35 @@ def main():
     if not image_files:
         sys.exit(f"No images found in {images_dir}")
 
-    cache = json.loads(Path(URLS_CACHE).read_text()) if Path(URLS_CACHE).exists() else {}
+    cache = load_cache()
     urls = []
-    new_uploads = {}
+    updated = False
+
     for f in image_files:
-        name = Path(f).name
-        if name in cache:
-            print(f"  cached  {name} → {cache[name]}")
-            urls.append(cache[name])
+        name = f.name
+        current_hash = sha256(f)
+        entry = cache.get(name)
+
+        if entry and entry.get("sha256") == current_hash:
+            print(f"  cached  {name} → {entry['url']}")
+            urls.append(entry["url"])
         else:
-            url = upload_image(str(f))
+            if entry:
+                print(f"  stale   {name} (content changed) — re-uploading")
+            url = upload_image(f)
+            cache[name] = {"url": url, "sha256": current_hash}
             urls.append(url)
-            new_uploads[name] = url
-    if new_uploads:
-        cache.update(new_uploads)
-        Path(URLS_CACHE).write_text(json.dumps(cache, indent=2))
+            updated = True
+
+    if updated:
+        save_cache(cache)
+        print(f"  waiting 5s for uploads to propagate...")
+        time.sleep(5)
 
     payload = {
         "name": style_name,
         "urls": urls,
-        "model": "qwen",
+        "model": os.getenv("TRAIN_MODEL", "qwen2512"),
         "type": os.getenv("TRAIN_TYPE", "Style"),
     }
     if os.getenv("MAX_TRAIN_STEPS"):
@@ -89,14 +124,21 @@ def main():
     if os.getenv("TRIGGER_WORD"):
         payload["trigger_word"] = os.getenv("TRIGGER_WORD")
 
-    print(f"\n── Training style '{style_name}' ──")
-    print({k: f"[{len(v)} urls]" if k == "urls" else v for k, v in payload.items()})
-    resp = requests.post(f"{BASE_URL}/styles/train", headers=auth(), json=payload)
-    if not resp.ok:
-        print(f"error {resp.status_code}: {resp.text}")
-        resp.raise_for_status()
-    job_id = resp.json()["job_id"]
+    print(f"\n── Training style '{style_name}' with {len(urls)} images ──")
+    job_id = None
+    for attempt in range(1, 4):
+        resp = requests.post(f"{BASE_URL}/styles/train", headers=auth(), json=payload)
+        if resp.ok:
+            job_id = resp.json()["job_id"]
+            break
+        print(f"error {resp.status_code} (attempt {attempt}/3): {resp.text}")
+        if resp.status_code != 500 or attempt == 3:
+            resp.raise_for_status()
+        print(f"retrying in 10s...")
+        time.sleep(10)
+
     print(f"job started: {job_id}")
+
 
     print(f"\n── Polling (this can take several minutes) ──")
     result = poll_job(job_id)
