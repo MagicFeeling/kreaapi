@@ -39,14 +39,14 @@ Uploaded URLs are cached in `uploaded_urls.json` — images are not re-uploaded 
 
 ## Styles
 
-| ID | Name |
-|---|---|
-| `lsmepfad3` | Alinor |
-| `org4er6a1` | Maelis |
-| `ol3ze07q9` | Eira   |
+| ID | Name | Recommended Style Strength |
+|---|---|---|
+| `lsmepfad3` | Alinor | 0.7 |
+| `org4er6a1` | Maelis v1 ||
+| `ol3ze07q9` | Eira   ||
+| `z4ebowuv5` | Maelis v2 1200 steps 44 images, Dataset Maelis_v2 |0.5|
 
+| `p2wpjjwie` | Mara v1 1000 steps 43 images, Dataset Mara_v1 ||
 ## Output
 
 Generated images are saved to `output/<style_id>_<timestamp>.png`.
-
-curl -s "https://api.krea.ai/styles?filter=user&limit=100" -H "Authorization: Bearer $(grep    KREA_API_KEY .env | cut -d= -f2)" | python3 -m json.tool 
